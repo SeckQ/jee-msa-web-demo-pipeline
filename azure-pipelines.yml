@@ -146,11 +146,84 @@ stages:
             displayName: 'Descarga CLI, Login y Despliegue Docker'
 
   # ==========================================
-  # STAGE 4: NOTIFICACIONES (NOTIFICATIONS)
+  # STAGE 4: RELEASE SUMMARY
+  # ==========================================
+  - stage: ReleaseSummary
+    displayName: 'Resumen del despliegue'
+    dependsOn:
+      - CI
+      - Approval
+      - CD
+    condition: always()
+    variables:
+      ciResult: $[ dependencies.CI.result ]
+      approvalResult: $[ dependencies.Approval.result ]
+      cdResult: $[ dependencies.CD.result ]
+    jobs:
+          - job: generate_summary
+            displayName: 'Generar reporte de ejecución'
+            steps:
+              - bash: |
+                  set -euo pipefail
+    
+                  REPORT="$(Agent.TempDirectory)/release-summary.md"
+                  DATE="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    
+                  cat > "$REPORT" <<EOF
+                  # Release Summary
+    
+                  ## Información general
+    
+                  | Campo | Valor |
+                  |---|---|
+                  | Proyecto | ${PROJECT_NAME} |
+                  | Build | ${BUILD_NUMBER} |
+                  | Rama | ${SOURCE_BRANCH} |
+                  | Commit | ${SOURCE_VERSION} |
+                  | Autor | ${REQUESTED_FOR} |
+                  | Fecha | ${DATE} |
+                  | Ambiente | OpenShift Sandbox |
+                  | Namespace | seckq-dev |
+    
+                  ## Resultados del Pipeline
+    
+                  | Stage | Resultado |
+                  |---|---|
+                  | CI | ${CI_RESULT} |
+                  | Approval | ${APPROVAL_RESULT} |
+                  | CD | ${CD_RESULT} |
+    
+                  ## Aplicación
+    
+                  [Abrir aplicación](http://jee-msa-web-demo-pipeline-seckq-dev.apps.rm2.thpm.p1.openshiftapps.com/api/status)
+    
+                  ---
+                  Reporte generado automáticamente por Azure DevOps.
+                  EOF
+    
+                  echo "=== Release Summary generado ==="
+                  cat "$REPORT"
+    
+                  echo "=== Publicando reporte ==="
+                  echo "##vso[task.uploadsummary]$REPORT"
+    
+                displayName: 'Generar y publicar resumen'
+                env:
+                  PROJECT_NAME: $(Build.Repository.Name)
+                  BUILD_NUMBER: $(Build.BuildNumber)
+                  SOURCE_BRANCH: $(Build.SourceBranchName)
+                  SOURCE_VERSION: $(Build.SourceVersion)
+                  REQUESTED_FOR: $(Build.RequestedFor)
+                  CI_RESULT: $(ciResult)
+                  APPROVAL_RESULT: $(approvalResult)
+                  CD_RESULT: $(cdResult)      
+
+  # ==========================================
+  # STAGE 5: NOTIFICACIONES (NOTIFICATIONS)
   # ==========================================
   - stage: Notifications
     displayName: 'Notificar'
-    dependsOn: [CI, Approval, CD]
+    dependsOn: [ReleaseSummary]
     condition: always()
     jobs:
       - job: send_status_email
